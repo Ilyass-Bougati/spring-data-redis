@@ -15,12 +15,14 @@
  */
 package org.springframework.data.redis.config;
 
+import java.util.ArrayList;
+import java.util.List;
+
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 import org.springframework.beans.factory.DisposableBean;
 import org.springframework.context.SmartLifecycle;
 import org.springframework.data.redis.listener.RedisMessageListenerContainer;
-
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Creates the necessary {@link RedisMessageListenerContainer} instances for the registered {@link RedisListenerEndpoint
@@ -32,32 +34,42 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 public class RedisListenerEndpointRegistry implements DisposableBean, SmartLifecycle {
 
-	private final Map<String, RedisMessageListenerContainer> listenerContainers = new ConcurrentHashMap<>();
+	private final List<RedisMessageListenerContainer> containers = new ArrayList<>();
+	private final Log logger = LogFactory.getLog(RedisListenerEndpointRegistry.class);
 	private boolean running;
 
-	public void registerListenerContainer(RedisListenerEndpoint endpoint, RedisListenerContainerFactory<?> factory) {
-		RedisMessageListenerContainer container = factory.createListenerContainer(endpoint);
-		this.listenerContainers.put(endpoint.getId(), container);
+	/**
+	 * Register a new {@link RedisListenerEndpoint} with the given {@link RedisMessageListenerContainer}.
+	 *
+	 * @param endpoint the endpoint to register.
+	 * @param container the container to register the endpoint with.
+	 */
+	public void registerListenerContainer(RedisListenerEndpoint endpoint, RedisMessageListenerContainer container) {
+		endpoint.setupListenerContainer(container);
 
-		if (this.running) {
-			container.start();
+		synchronized (this.containers) {
+			this.containers.add(container);
 		}
 	}
 
 	@Override
 	public void start() {
-		this.running = true;
-		for (RedisMessageListenerContainer container : this.listenerContainers.values()) {
-			container.start();
+		for (RedisMessageListenerContainer container : this.containers) {
+			if (!container.isRunning()) {
+				container.start();
+			}
 		}
+		this.running = true;
 	}
 
 	@Override
 	public void stop() {
-		this.running = false;
-		for (RedisMessageListenerContainer container : this.listenerContainers.values()) {
-			container.stop();
+		for (RedisMessageListenerContainer container : this.containers) {
+			if (container.isRunning()) {
+				container.stop();
+			}
 		}
+		this.running = false;
 	}
 
 	@Override
@@ -67,12 +79,16 @@ public class RedisListenerEndpointRegistry implements DisposableBean, SmartLifec
 
 	@Override
 	public void destroy() throws Exception {
-		for (RedisMessageListenerContainer container : this.listenerContainers.values()) {
-			container.destroy();
+		for (RedisMessageListenerContainer container : this.containers) {
+			try {
+				container.destroy();
+			} catch (Exception ex) {
+				logger.error("Error destroying message listener container ", ex);
+			}
 		}
 	}
 
-	public Map<String, RedisMessageListenerContainer> getListenerContainers() {
-		return listenerContainers;
+	public List<RedisMessageListenerContainer> getListenerContainers() {
+		return containers;
 	}
 }

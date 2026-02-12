@@ -15,26 +15,29 @@
  */
 package org.springframework.data.redis.annotation;
 
-import org.springframework.beans.factory.BeanFactory;
-import org.springframework.beans.factory.config.BeanPostProcessor;
-import org.springframework.core.Ordered;
-import org.springframework.data.redis.config.RedisListenerContainerFactory;
-import org.springframework.data.redis.config.RedisListenerEndpointRegistry;
-import org.springframework.aop.support.AopUtils;
-import org.springframework.core.MethodIntrospector;
-import org.springframework.core.annotation.AnnotatedElementUtils;
-import org.springframework.util.StringUtils;
-import org.jspecify.annotations.NonNull;
-
 import java.lang.reflect.Method;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
+import org.jspecify.annotations.NonNull;
+import org.springframework.aop.support.AopUtils;
+import org.springframework.beans.factory.BeanFactory;
+import org.springframework.beans.factory.config.BeanPostProcessor;
+import org.springframework.core.MethodIntrospector;
+import org.springframework.core.Ordered;
+import org.springframework.core.annotation.AnnotatedElementUtils;
+import org.springframework.data.redis.config.RedisListenerEndpointRegistry;
+import org.springframework.data.redis.listener.RedisMessageListenerContainer;
+import org.springframework.util.StringUtils;
+
 /**
- * Bean post-processor that registers methods annotated with {@link RedisListener} to be invoked by a Redis message
- * listener container created under the cover by a
- * {@link org.springframework.data.redis.config.RedisListenerContainerFactory}.
+ * Bean post-processor that registers methods annotated with {@link RedisListener} to be invoked by a
+ * {@link org.springframework.data.redis.listener.RedisMessageListenerContainer}.
+ *
+ * <p>The container is retrieved from the {@link org.springframework.beans.factory.BeanFactory} using the
+ * name specified in {@link RedisListener#containerFactory()} or falls back to the default
+ * {@code "redisMessageListenerContainer"} bean name.
  *
  * @author Ilyass Bougati
  * @see RedisListener
@@ -70,20 +73,20 @@ public class RedisListenerAnnotationBeanPostProcessor implements BeanPostProcess
 		MethodRedisListenerEndpoint endpoint = new MethodRedisListenerEndpoint();
 		endpoint.setBean(bean);
 		endpoint.setMethod(method);
+		endpoint.setBeanFactory(this.beanFactory);
 		endpoint.setId(getEndpointId(redisListener));
 		endpoint.setTopics(redisListener.topics());
 		endpoint.setTopicPatterns(redisListener.topicPatterns());
-		endpoint.setBeanFactory(this.beanFactory);
 
-		// Use the factory from the annotation, or fall back to default
-		String containerFactoryName = redisListener.containerFactory();
-		if (!StringUtils.hasText(containerFactoryName)) {
-			containerFactoryName = this.containerFactoryBeanName;
+		String containerBeanName = redisListener.containerFactory();
+		if (!StringUtils.hasText(containerBeanName)) {
+			containerBeanName = "redisMessageListenerContainer";
 		}
 
-		RedisListenerContainerFactory<?> factory = this.beanFactory.getBean(containerFactoryName,
-				RedisListenerContainerFactory.class);
-		this.endpointRegistry.registerListenerContainer(endpoint, factory);
+		RedisMessageListenerContainer container = this.beanFactory.getBean(containerBeanName,
+				RedisMessageListenerContainer.class);
+
+		this.endpointRegistry.registerListenerContainer(endpoint, container);
 	}
 
 	private String getEndpointId(RedisListener redisListener) {

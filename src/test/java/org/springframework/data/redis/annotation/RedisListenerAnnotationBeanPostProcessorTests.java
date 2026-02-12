@@ -15,22 +15,19 @@
  */
 package org.springframework.data.redis.annotation;
 
-import org.jspecify.annotations.NonNull;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.BDDMockito.then;
+import static org.mockito.Mockito.mock;
+
 import org.junit.jupiter.api.Test;
 import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.context.annotation.AnnotationConfigApplicationContext;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.data.redis.config.RedisListenerContainerFactory;
-import org.springframework.data.redis.config.RedisListenerEndpoint;
 import org.springframework.data.redis.config.RedisListenerEndpointRegistry;
 import org.springframework.data.redis.listener.RedisMessageListenerContainer;
-
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.BDDMockito.given;
-import static org.mockito.BDDMockito.then;
-import static org.mockito.Mockito.mock;
+import org.springframework.data.redis.listener.Topic;
 
 /**
  * Integration test for {@link EnableRedisListeners} and {@link RedisListener}
@@ -38,35 +35,32 @@ import static org.mockito.Mockito.mock;
  * @author Ilyass Bougati
  */
 class RedisListenerAnnotationBeanPostProcessorTests {
-
 	@Test // GH-1004
-	void registersListenerWithDefaultFactory() {
+	void registersListenerWithDefaultContainer() {
 		ConfigurableApplicationContext context = new AnnotationConfigApplicationContext(Config.class, SimpleService.class);
+		RedisMessageListenerContainer container = context.getBean("redisMessageListenerContainer",
+				RedisMessageListenerContainer.class);
 
-		RedisListenerContainerFactory<?> factory = context.getBean("redisListenerContainerFactory",
-				RedisListenerContainerFactory.class);
-		then(factory).should().createListenerContainer(any(RedisListenerEndpoint.class));
+		then(container).should().addMessageListener(any(), any(Topic.class));
 
 		RedisListenerEndpointRegistry registry = context.getBean(RedisListenerEndpointRegistry.class);
-		assertThat(registry.getListenerContainers()).isNotEmpty();
+		assertThat(registry.isRunning()).isTrue();
 
 		context.close();
+		assertThat(registry.isRunning()).isFalse();
 	}
 
 	@Configuration
 	@EnableRedisListeners
 	static class Config {
-		@Bean("redisListenerContainerFactory")
-		RedisListenerContainerFactory<@NonNull RedisMessageListenerContainer> redisListenerContainerFactory() {
-			RedisListenerContainerFactory<@NonNull RedisMessageListenerContainer> factory = mock(
-					RedisListenerContainerFactory.class);
-			given(factory.createListenerContainer(any())).willReturn(new RedisMessageListenerContainer());
-			return factory;
+		@Bean
+		public RedisMessageListenerContainer redisMessageListenerContainer() {
+			return mock(RedisMessageListenerContainer.class);
 		}
 	}
 
 	static class SimpleService {
 		@RedisListener(topics = "test-topic")
-		public void handle(String message) {}
+		public void handle(String msg) {}
 	}
 }
